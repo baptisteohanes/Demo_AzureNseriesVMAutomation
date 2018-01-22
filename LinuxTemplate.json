@@ -1,0 +1,217 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "0.1.0.0",
+    "parameters": {
+      "VmName": {
+        "type": "string",
+        "defaultValue": "TEST",
+        "metadata": {
+          "description": "Name of the VM"
+        }
+      },
+      "VMSize": {
+        "type": "string",
+        "defaultValue": "Standard_NC6",
+        "allowedValues": [
+          "Standard_NC6"
+        ],
+        "metadata": {
+          "description": "Size of the VM"
+        }
+      },
+      "LocalAdminName": {
+        "type": "string",
+        "metadata": {
+          "description": "Name of the local admin of the machines"
+        }
+      },
+      "LocalAdminPassword": {
+        "defaultValue": null,
+        "type": "securestring"
+      },
+      "PathToCustomScript": {
+        "type": "string",
+        "metadata": {
+          "description": "Full path to custom script file that join the VM to the domain, with SAS key and script name included. Ex: https://iaasv2tempstorageam.blob.core.windows.net/vmextensionstemporary-10030000801c0682-20171018152237652/script.sh?sv=2015-04-05&sr=c&sig=J5QZlqDqok0uuwmIG4KzNqzoc0nmcko5idbWKrRx4Cw%3D&se=2017-10-19T15%3A22%3A37Z&sp=rw"
+        }
+      },
+      "ScriptToExecute": {
+        "type": "string",
+        "metadata": {
+          "description": "Bash script name to execute via the extension"
+        }
+      }
+    },
+    "variables": {
+      "dataCenterLocation":"[resourceGroup().location]",
+      "osDiskName": "[concat(parameters('VMname'),'-OS')]",
+      "vnetName":"[concat(parameters('VMname'),'-VNET')]",
+      "vnetID": "[resourceID('Microsoft.Network/virtualNetworks', variables('VNetName'))]",
+      "subnetRefID": "[concat(variables('VnetID'),'/subnets/Core')]",
+      "publicIpAddressName": "[concat(parameters('VMname'),'-PIP')]",
+      "networkSecurityGroupName":"[concat(parameters('VMname'),'-NSG')]"
+    },
+    "resources": [
+        {
+          "name": "[variables('vnetName')]",
+          "type": "Microsoft.Network/virtualNetworks",
+          "apiVersion": "2017-06-01",
+          "location": "[variables('DataCenterLocation')]",
+          "properties": {
+              "addressSpace": {
+                  "addressPrefixes": [
+                      "10.0.0.0/8"
+                  ]
+              },
+              "subnets": [
+                  {
+                      "name": "Core",
+                      "properties": {
+                          "addressPrefix": "10.0.1.0/24"
+                      }
+                  }
+              ]
+          }
+      },
+      {
+        "name": "[variables('publicIpAddressName')]",
+        "type": "Microsoft.Network/publicIpAddresses",
+        "apiVersion": "2017-08-01",
+        "location": "[variables('dataCenterLocation')]",
+        "properties": {
+            "publicIpAllocationMethod": "Dynamic"
+        },
+        "sku": {
+            "name": "Basic"
+        }
+      },
+      {
+        "name": "[variables('networkSecurityGroupName')]",
+        "type": "Microsoft.Network/networkSecurityGroups",
+        "apiVersion": "2017-06-01",
+        "location": "[variables('dataCenterLocation')]",
+        "properties": {
+            "securityRules": [
+                {
+                    "name": "default-allow-ssh",
+                    "properties": {
+                        "priority": 1000,
+                        "protocol": "Tcp",
+                        "access": "Allow",
+                        "direction": "Inbound",
+                        "sourceAddressPrefix": "*",
+                        "sourcePortRange": "*",
+                        "destinationAddressPrefix": "*",
+                        "destinationPortRange": "22"
+                    }
+                }
+            ]
+        }
+      },      
+      {
+        "type": "Microsoft.Network/networkInterfaces",
+        "name": "[concat(parameters('VMname'),'-NIC')]",
+        "apiVersion": "2016-03-30",
+        "location": "[variables('DataCenterLocation')]",
+        "tags": { "displayName": "NIC" },
+        "comments": "This NIC is plugged to the Azurestack lab of this specific deployment",
+        "properties": {
+          "ipConfigurations": [
+            {
+              "name": "ipconfig1",
+              "properties": {
+                "privateIPAllocationMethod": "Dynamic",
+                "subnet": {
+                  "id": "[variables('SubnetRefId')]"
+                }
+              }
+            }
+          ],
+          "networkSecurityGroup": {
+            "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroupName'))]"
+        },
+          "dnsSettings": {
+            "dnsServers": []
+          }
+        },
+        "resources": [],
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroupName'))]",
+          "[resourceId('Microsoft.Network/virtualNetworks', variables('VNetName'))]",
+          "[resourceId('Microsoft.Network/publicIpAddresses', variables('publicIpAddressName'))]"
+        ]
+      },
+      {
+        "type": "Microsoft.Compute/virtualMachines",
+        "name": "[parameters('VMname')]",
+        "apiVersion": "2017-03-30",
+        "location": "[variables('DataCenterLocation')]",
+        "comments": "Windows domain-joined LVM",
+        "properties": {
+          "hardwareProfile": {
+            "vmSize": "[parameters('VMSize')]"
+          },
+          "storageProfile": {
+            "imageReference": {
+                "publisher": "Canonical",
+                "offer": "UbuntuServer",
+                "sku": "16.04-LTS",
+                "version": "latest"
+            },
+            "osDisk": {
+              "osType": "Linux",
+              "caching": "ReadWrite",
+              "createOption": "FromImage",
+              "name": "[variables('OSDiskName')]",
+              "managedDisk": {
+                "storageAccountType": "Standard_LRS"
+              },
+              "diskSizeGB": 128
+            },
+            "dataDisks": []
+          },
+          "osProfile": {
+            "computerName": "[parameters('VMname')]",
+            "adminUsername": "[parameters('LocalAdminName')]",
+            "adminPassword": "[parameters('LocalAdminPassword')]"
+          },
+          "networkProfile": {
+            "networkInterfaces": [
+              {
+                "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('VMname'),'-NIC'))]"
+              }
+            ]
+          }
+        },
+        "dependsOn": [
+          "[resourceId('Microsoft.Network/networkInterfaces', concat(parameters('VMname'),'-NIC'))]"
+        ],
+        "resources": [
+            {
+                "name": "LinuxNvidiaCustomScriptExtension",
+                "type": "extensions",
+                "location": "[resourceGroup().location]",
+                "apiVersion": "2017-03-30",
+                "dependsOn": [
+                  "[concat('Microsoft.Compute/virtualMachines/', parameters('VMname'))]"
+                ],
+                "properties": {
+                  "publisher": "Microsoft.Azure.Extensions",
+                  "type": "CustomScript",
+                  "typeHandlerVersion": "2.0",
+                  "autoUpgradeMinorVersion": true,
+                  "settings": {
+                    "fileUris": [
+                      "[parameters('PathToCustomScript')]"
+                    ]              
+                  },
+                  "protectedSettings": {
+                    "commandToExecute": "[concat('sudo sh ', parameters('ScriptToExecute'))]"
+                  }
+                }
+            }
+        ]
+      }
+    ],
+    "outputs": {}
+  }

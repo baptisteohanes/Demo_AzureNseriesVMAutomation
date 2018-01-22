@@ -1,0 +1,24 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "VmName": {
+        "value": "Ubuntu"
+      },
+      "VMSize": {
+        "value": "Standard_NC6"
+      },
+      "LocalAdminName": {
+        "value": "azureadmin"
+      },
+      "LocalAdminPassword": {
+        "value": "2rtFXF77sf42@"
+      },
+      "PathToCustomScript": {
+        "value": "https://jagdscrepo.blob.core.windows.net/linuxvideodrivers/installvideodriver.sh"
+      },
+      "ScriptToExecute": {
+        "value": "installvideodriver.sh"
+      }
+    }
+  }
